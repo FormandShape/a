@@ -15,18 +15,23 @@ _faces = [
     ('B', 'C', 'E'), ('A', 'D', 'F'), ('A', 'D', 'G'), ('B', 'C', 'H'),
     ('A', 'F', 'G'), ('B', 'E', 'H'), ('C', 'E', 'H'), ('D', 'F', 'G'),
 ]
-# We need to create un-indexed data for flat colors per face
-face_drawing_data = []
-color_drawing_data = []
+# We need to create data for the edges of the triangular faces
+shape_edge_data = []
+shape_edge_color_data = []
 _face_colors = [
-    (1, 0, 0, 0.2), (0, 1, 0, 0.2), (0, 0, 1, 0.2), (1, 1, 0, 0.2),
-    (0, 1, 1, 0.2), (1, 0, 1, 0.2), (1, 0.5, 0, 0.2), (0.5, 1, 0.5, 0.2)
+    (1, 0, 0, 1.0), (0, 1, 0, 1.0), (0, 0, 1, 1.0), (1, 1, 0, 1.0),
+    (0, 1, 1, 1.0), (1, 0, 1, 1.0), (1, 0.5, 0, 1.0), (0.5, 1, 0.5, 1.0)
 ]
 for i, face in enumerate(_faces):
     color = _face_colors[i % len(_face_colors)]
-    for vertex_name in face:
-        face_drawing_data.extend(_vertices[vertex_name])
-        color_drawing_data.extend(color)
+    v1, v2, v3 = face
+    # Create lines for edges v1-v2, v2-v3, v3-v1
+    edges = [(v1, v2), (v2, v3), (v3, v1)]
+    for p1, p2 in edges:
+        shape_edge_data.extend(_vertices[p1])
+        shape_edge_data.extend(_vertices[p2])
+        shape_edge_color_data.extend(color)
+        shape_edge_color_data.extend(color)
 
 # Data for the intersection lines (octahedron)
 _octa_vertices = {
@@ -54,7 +59,7 @@ _cube_edges = [
 ]
 cube_vertex_data = []
 cube_color_data = []
-cube_color = (0.8, 0.8, 0.8, 0.2) # Light grey, 0.2 alpha
+cube_color = (0.8, 0.8, 0.8, 1.0) # Light grey, opaque
 for edge in _cube_edges:
     for vertex_name in edge:
         cube_vertex_data.extend(_vertices[vertex_name])
@@ -102,25 +107,25 @@ class ViewerWindow(pyglet.window.Window):
         # --- Shader and Buffer Setup ---
         self.shader_program = create_shader_program(vert_shader_source, frag_shader_source)
 
-        # --- Set up VAO for faces ---
-        self.face_vao = GLuint()
-        glGenVertexArrays(1, self.face_vao)
-        glBindVertexArray(self.face_vao)
+        # --- Set up VAO for shape edges ---
+        self.shape_edge_vao = GLuint()
+        glGenVertexArrays(1, self.shape_edge_vao)
+        glBindVertexArray(self.shape_edge_vao)
         # Position buffer
-        face_vbo_pos = GLuint()
-        glGenBuffers(1, face_vbo_pos)
-        glBindBuffer(GL_ARRAY_BUFFER, face_vbo_pos)
-        glBufferData(GL_ARRAY_BUFFER, len(face_drawing_data) * 4, (GLfloat * len(face_drawing_data))(*face_drawing_data), GL_STATIC_DRAW)
+        shape_edge_vbo_pos = GLuint()
+        glGenBuffers(1, shape_edge_vbo_pos)
+        glBindBuffer(GL_ARRAY_BUFFER, shape_edge_vbo_pos)
+        glBufferData(GL_ARRAY_BUFFER, len(shape_edge_data) * 4, (GLfloat * len(shape_edge_data))(*shape_edge_data), GL_STATIC_DRAW)
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0)
         glEnableVertexAttribArray(0)
         # Color buffer
-        face_vbo_color = GLuint()
-        glGenBuffers(1, face_vbo_color)
-        glBindBuffer(GL_ARRAY_BUFFER, face_vbo_color)
-        glBufferData(GL_ARRAY_BUFFER, len(color_drawing_data) * 4, (GLfloat * len(color_drawing_data))(*color_drawing_data), GL_STATIC_DRAW)
+        shape_edge_vbo_color = GLuint()
+        glGenBuffers(1, shape_edge_vbo_color)
+        glBindBuffer(GL_ARRAY_BUFFER, shape_edge_vbo_color)
+        glBufferData(GL_ARRAY_BUFFER, len(shape_edge_color_data) * 4, (GLfloat * len(shape_edge_color_data))(*shape_edge_color_data), GL_STATIC_DRAW)
         glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, 0)
         glEnableVertexAttribArray(1)
-        self.face_vertex_count = len(face_drawing_data) // 3
+        self.shape_edge_vertex_count = len(shape_edge_data) // 3
 
         # --- Set up VAO for lines ---
         self.line_vao = GLuint()
@@ -181,7 +186,7 @@ class ViewerWindow(pyglet.window.Window):
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
         if buttons & pyglet.window.mouse.LEFT:
-            sensitivity = 0.5
+            sensitivity = 0.25
             self.rx -= dy * sensitivity
             self.ry += dx * sensitivity
 
@@ -199,11 +204,12 @@ class ViewerWindow(pyglet.window.Window):
         mvp = self.proj_matrix @ self.view_matrix @ model_matrix
         self.shader_program['mvp'] = mvp
 
-        # Draw faces
-        glBindVertexArray(self.face_vao)
-        glDrawArrays(GL_TRIANGLES, 0, self.face_vertex_count)
+        # Draw the shape wireframe
+        glLineWidth(1)
+        glBindVertexArray(self.shape_edge_vao)
+        glDrawArrays(GL_LINES, 0, self.shape_edge_vertex_count)
 
-        # Draw the wireframe cube
+        # Draw the cube wireframe
         glLineWidth(1)
         glBindVertexArray(self.cube_vao)
         glDrawArrays(GL_LINES, 0, self.cube_vertex_count)
