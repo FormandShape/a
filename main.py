@@ -1,107 +1,159 @@
 import pyglet
 from pyglet.gl import *
+from pyglet import math
 
-# Define the vertices of the cube
-vertices = {
-    'A': (1, 1, 1),
-    'B': (1, 1, -1),
-    'C': (1, -1, 1),
-    'D': (1, -1, -1),
-    'E': (-1, 1, 1),
-    'F': (-1, 1, -1),
-    'G': (-1, -1, 1),
-    'H': (-1, -1, -1),
+# --- Data Restructuring for Modern OpenGL ---
+
+# (Previous data restructuring code remains the same)
+# Original vertices
+_vertices = {
+    'A': (1, 1, 1), 'B': (1, 1, -1), 'C': (1, -1, 1), 'D': (1, -1, -1),
+    'E': (-1, 1, 1), 'F': (-1, 1, -1), 'G': (-1, -1, 1), 'H': (-1, -1, -1),
 }
-
-# Define the faces as triangles
-faces = [
-    ('B', 'C', 'E'),
-    ('A', 'D', 'F'),
-    ('A', 'D', 'G'),
-    ('B', 'C', 'H'),
-    ('A', 'F', 'G'),
-    ('B', 'E', 'H'),
-    ('C', 'E', 'H'),
-    ('D', 'F', 'G'),
+# Original faces (triangles)
+_faces = [
+    ('B', 'C', 'E'), ('A', 'D', 'F'), ('A', 'D', 'G'), ('B', 'C', 'H'),
+    ('A', 'F', 'G'), ('B', 'E', 'H'), ('C', 'E', 'H'), ('D', 'F', 'G'),
 ]
+# We need to create un-indexed data for flat colors per face
+face_drawing_data = []
+color_drawing_data = []
+_face_colors = [
+    (1, 0, 0, 0.5), (0, 1, 0, 0.5), (0, 0, 1, 0.5), (1, 1, 0, 0.5),
+    (0, 1, 1, 0.5), (1, 0, 1, 0.5), (1, 0.5, 0, 0.5), (0.5, 1, 0.5, 0.5)
+]
+for i, face in enumerate(_faces):
+    color = _face_colors[i % len(_face_colors)]
+    for vertex_name in face:
+        face_drawing_data.extend(_vertices[vertex_name])
+        color_drawing_data.extend(color)
 
-# Define the vertices and edges of the inner octahedron (intersection lines)
-octa_vertices = {
-    'px': (1, 0, 0), 'nx': (-1, 0, 0),
-    'py': (0, 1, 0), 'ny': (0, -1, 0),
-    'pz': (0, 0, 1), 'nz': (0, 0, -1),
+# Data for the intersection lines (octahedron)
+_octa_vertices = {
+    'px': (1, 0, 0), 'nx': (-1, 0, 0), 'py': (0, 1, 0),
+    'ny': (0, -1, 0), 'pz': (0, 0, 1), 'nz': (0, 0, -1),
 }
-
-octa_edges = [
+_octa_edges = [
     ('pz', 'py'), ('pz', 'ny'), ('pz', 'px'), ('pz', 'nx'),
     ('nz', 'py'), ('nz', 'ny'), ('nz', 'px'), ('nz', 'nx'),
     ('py', 'px'), ('py', 'nx'), ('ny', 'px'), ('ny', 'nx'),
 ]
+line_vertex_data = []
+line_color_data = []
+line_color = (0.1, 0.1, 0.1, 1.0)
+for edge in _octa_edges:
+    for vertex_name in edge:
+        line_vertex_data.extend(_octa_vertices[vertex_name])
+        line_color_data.extend(line_color)
+
+
+def create_shader_program(vertex_source, fragment_source):
+    """Compiles and links a shader program using Pyglet's high-level API."""
+    vertex_shader = pyglet.graphics.shader.Shader(vertex_source, 'vertex')
+    fragment_shader = pyglet.graphics.shader.Shader(fragment_source, 'fragment')
+    return pyglet.graphics.shader.ShaderProgram(vertex_shader, fragment_shader)
+
 
 class ViewerWindow(pyglet.window.Window):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.set_minimum_size(200, 200)
 
-        # Rotation angles
-        self.rx = self.ry = 0
+        # --- Shader and Buffer Setup ---
+        with open('vert.glsl', 'r') as f: vert_shader_source = f.read()
+        with open('frag.glsl', 'r') as f: frag_shader_source = f.read()
+        self.shader_program = create_shader_program(vert_shader_source, frag_shader_source)
 
-        # Enable transparency
-        pyglet.gl.glEnable(pyglet.gl.GL_BLEND)
-        pyglet.gl.glBlendFunc(pyglet.gl.GL_SRC_ALPHA, pyglet.gl.GL_ONE_MINUS_SRC_ALPHA)
+        # --- Set up VAO for faces ---
+        self.face_vao = GLuint()
+        glGenVertexArrays(1, self.face_vao)
+        glBindVertexArray(self.face_vao)
+        # Position buffer
+        face_vbo_pos = GLuint()
+        glGenBuffers(1, face_vbo_pos)
+        glBindBuffer(GL_ARRAY_BUFFER, face_vbo_pos)
+        glBufferData(GL_ARRAY_BUFFER, len(face_drawing_data) * 4, (GLfloat * len(face_drawing_data))(*face_drawing_data), GL_STATIC_DRAW)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0)
+        glEnableVertexAttribArray(0)
+        # Color buffer
+        face_vbo_color = GLuint()
+        glGenBuffers(1, face_vbo_color)
+        glBindBuffer(GL_ARRAY_BUFFER, face_vbo_color)
+        glBufferData(GL_ARRAY_BUFFER, len(color_drawing_data) * 4, (GLfloat * len(color_drawing_data))(*color_drawing_data), GL_STATIC_DRAW)
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, 0)
+        glEnableVertexAttribArray(1)
+        self.face_vertex_count = len(face_drawing_data) // 3
 
-        # Enable depth testing
-        pyglet.gl.glEnable(pyglet.gl.GL_DEPTH_TEST)
+        # --- Set up VAO for lines ---
+        self.line_vao = GLuint()
+        glGenVertexArrays(1, self.line_vao)
+        glBindVertexArray(self.line_vao)
+        # Position buffer
+        line_vbo_pos = GLuint()
+        glGenBuffers(1, line_vbo_pos)
+        glBindBuffer(GL_ARRAY_BUFFER, line_vbo_pos)
+        glBufferData(GL_ARRAY_BUFFER, len(line_vertex_data) * 4, (GLfloat * len(line_vertex_data))(*line_vertex_data), GL_STATIC_DRAW)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0)
+        glEnableVertexAttribArray(0)
+        # Color buffer
+        line_vbo_color = GLuint()
+        glGenBuffers(1, line_vbo_color)
+        glBindBuffer(GL_ARRAY_BUFFER, line_vbo_color)
+        glBufferData(GL_ARRAY_BUFFER, len(line_color_data) * 4, (GLfloat * len(line_color_data))(*line_color_data), GL_STATIC_DRAW)
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, 0)
+        glEnableVertexAttribArray(1)
+        self.line_vertex_count = len(line_vertex_data) // 3
+
+        glBindVertexArray(0)
+
+        # --- GL Settings and Matrices ---
+        glEnable(GL_DEPTH_TEST)
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
+        self.rx = 45  # Initial rotation
+        self.ry = 45
+
+        self.proj_matrix = math.Mat4()
+        self.view_matrix = math.Mat4.from_translation(math.Vec3(0, 0, -5))
+
+    def on_resize(self, width, height):
+        glViewport(0, 0, width, height)
+        self.proj_matrix = math.Mat4.perspective_projection(aspect=width/height, z_near=0.1, z_far=100, fov=45)
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
         if buttons & pyglet.window.mouse.LEFT:
             self.rx -= dy
             self.ry += dx
 
-    def on_resize(self, width, height):
-        pyglet.gl.glViewport(0, 0, width, height)
-        pyglet.gl.glMatrixMode(pyglet.gl.GL_PROJECTION)
-        pyglet.gl.glLoadIdentity()
-        pyglet.gl.gluPerspective(45, width / float(height), 0.1, 100.0)
-        pyglet.gl.glMatrixMode(pyglet.gl.GL_MODELVIEW)
-
     def on_draw(self):
         self.clear()
-        pyglet.gl.glLoadIdentity()
 
-        # Move the object away from the camera
-        pyglet.gl.glTranslatef(0, 0, -5)
+        # Use the shader program
+        self.shader_program.use()
 
-        # Apply rotation
-        pyglet.gl.glRotatef(self.rx, 1, 0, 0)
-        pyglet.gl.glRotatef(self.ry, 0, 1, 0)
+        # Create model matrix from rotation
+        model_matrix = math.Mat4.from_rotation(self.rx, (1, 0, 0))
+        model_matrix @= math.Mat4.from_rotation(self.ry, (0, 1, 0))
 
-        # Define some colors for the faces (with 0.5 alpha for transparency)
-        colors = [
-            (1, 0, 0, 0.5), (0, 1, 0, 0.5), (0, 0, 1, 0.5),
-            (1, 1, 0, 0.5), (0, 1, 1, 0.5), (1, 0, 1, 0.5),
-            (1, 0.5, 0, 0.5), (0.5, 1, 0.5, 0.5)
-        ]
+        # Calculate final MVP matrix and set uniform
+        mvp = self.proj_matrix @ self.view_matrix @ model_matrix
+        self.shader_program['mvp'] = mvp
 
-        # Draw the faces
-        pyglet.gl.glBegin(pyglet.gl.GL_TRIANGLES)
-        for i, face in enumerate(faces):
-            color = colors[i % len(colors)]
-            pyglet.gl.glColor4f(*color)
-            for vertex_name in face:
-                pyglet.gl.glVertex3fv(pyglet.gl.GLfloat(*vertices[vertex_name]))
-        pyglet.gl.glEnd()
+        # Draw faces
+        glBindVertexArray(self.face_vao)
+        glDrawArrays(GL_TRIANGLES, 0, self.face_vertex_count)
 
-        # Draw the intersection lines (edges of the octahedron)
-        pyglet.gl.glLineWidth(3)  # Make lines thicker
-        pyglet.gl.glColor4f(0.1, 0.1, 0.1, 1.0)  # Dark, solid color
-        pyglet.gl.glBegin(pyglet.gl.GL_LINES)
-        for edge in octa_edges:
-            for vertex_name in edge:
-                pyglet.gl.glVertex3fv(pyglet.gl.GLfloat(*octa_vertices[vertex_name]))
-        pyglet.gl.glEnd()
-        pyglet.gl.glLineWidth(1) # Reset line width
+        # Draw lines
+        glLineWidth(3)
+        glBindVertexArray(self.line_vao)
+        glDrawArrays(GL_LINES, 0, self.line_vertex_count)
+        glLineWidth(1)
+
+        self.shader_program.stop()
+
 
 if __name__ == '__main__':
-    window = ViewerWindow(width=800, height=600, caption='3D Viewer', resizable=True)
+    config = pyglet.gl.Config(major_version=3, minor_version=3, depth_size=24)
+    window = ViewerWindow(width=800, height=600, caption='Modern OpenGL Viewer', resizable=True, vsync=True, config=config)
     pyglet.app.run()
