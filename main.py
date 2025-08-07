@@ -47,6 +47,32 @@ for edge in _octa_edges:
         line_color_data.extend(line_color)
 
 
+# --- Shader Definitions ---
+vert_shader_source = """
+#version 330 core
+layout (location = 0) in vec3 aPos;
+layout (location = 1) in vec4 aColor;
+out vec4 vertexColor;
+uniform mat4 mvp;
+
+void main()
+{
+    gl_Position = mvp * vec4(aPos, 1.0);
+    vertexColor = aColor;
+}
+"""
+
+frag_shader_source = """
+#version 330 core
+in vec4 vertexColor;
+out vec4 FragColor;
+
+void main()
+{
+    FragColor = vertexColor;
+}
+"""
+
 def create_shader_program(vertex_source, fragment_source):
     """Compiles and links a shader program using Pyglet's high-level API."""
     vertex_shader = pyglet.graphics.shader.Shader(vertex_source, 'vertex')
@@ -60,8 +86,6 @@ class ViewerWindow(pyglet.window.Window):
         self.set_minimum_size(200, 200)
 
         # --- Shader and Buffer Setup ---
-        with open('vert.glsl', 'r') as f: vert_shader_source = f.read()
-        with open('frag.glsl', 'r') as f: frag_shader_source = f.read()
         self.shader_program = create_shader_program(vert_shader_source, frag_shader_source)
 
         # --- Set up VAO for faces ---
