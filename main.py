@@ -19,8 +19,8 @@ _faces = [
 face_drawing_data = []
 color_drawing_data = []
 _face_colors = [
-    (1, 0, 0, 0.5), (0, 1, 0, 0.5), (0, 0, 1, 0.5), (1, 1, 0, 0.5),
-    (0, 1, 1, 0.5), (1, 0, 1, 0.5), (1, 0.5, 0, 0.5), (0.5, 1, 0.5, 0.5)
+    (1, 0, 0, 0.2), (0, 1, 0, 0.2), (0, 0, 1, 0.2), (1, 1, 0, 0.2),
+    (0, 1, 1, 0.2), (1, 0, 1, 0.2), (1, 0.5, 0, 0.2), (0.5, 1, 0.5, 0.2)
 ]
 for i, face in enumerate(_faces):
     color = _face_colors[i % len(_face_colors)]
@@ -45,6 +45,20 @@ for edge in _octa_edges:
     for vertex_name in edge:
         line_vertex_data.extend(_octa_vertices[vertex_name])
         line_color_data.extend(line_color)
+
+# Data for the wireframe cube
+_cube_edges = [
+    ('A', 'B'), ('B', 'D'), ('D', 'C'), ('C', 'A'), # Top face
+    ('E', 'F'), ('F', 'H'), ('H', 'G'), ('G', 'E'), # Bottom face
+    ('A', 'E'), ('B', 'F'), ('C', 'G'), ('D', 'H')  # Connecting edges
+]
+cube_vertex_data = []
+cube_color_data = []
+cube_color = (0.8, 0.8, 0.8, 0.2) # Light grey, 0.2 alpha
+for edge in _cube_edges:
+    for vertex_name in edge:
+        cube_vertex_data.extend(_vertices[vertex_name])
+        cube_color_data.extend(cube_color)
 
 
 # --- Shader Definitions ---
@@ -128,6 +142,26 @@ class ViewerWindow(pyglet.window.Window):
         glEnableVertexAttribArray(1)
         self.line_vertex_count = len(line_vertex_data) // 3
 
+        # --- Set up VAO for cube ---
+        self.cube_vao = GLuint()
+        glGenVertexArrays(1, self.cube_vao)
+        glBindVertexArray(self.cube_vao)
+        # Position buffer
+        cube_vbo_pos = GLuint()
+        glGenBuffers(1, cube_vbo_pos)
+        glBindBuffer(GL_ARRAY_BUFFER, cube_vbo_pos)
+        glBufferData(GL_ARRAY_BUFFER, len(cube_vertex_data) * 4, (GLfloat * len(cube_vertex_data))(*cube_vertex_data), GL_STATIC_DRAW)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0)
+        glEnableVertexAttribArray(0)
+        # Color buffer
+        cube_vbo_color = GLuint()
+        glGenBuffers(1, cube_vbo_color)
+        glBindBuffer(GL_ARRAY_BUFFER, cube_vbo_color)
+        glBufferData(GL_ARRAY_BUFFER, len(cube_color_data) * 4, (GLfloat * len(cube_color_data))(*cube_color_data), GL_STATIC_DRAW)
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, 0, 0)
+        glEnableVertexAttribArray(1)
+        self.cube_vertex_count = len(cube_vertex_data) // 3
+
         glBindVertexArray(0)
 
         # --- GL Settings and Matrices ---
@@ -147,8 +181,9 @@ class ViewerWindow(pyglet.window.Window):
 
     def on_mouse_drag(self, x, y, dx, dy, buttons, modifiers):
         if buttons & pyglet.window.mouse.LEFT:
-            self.rx -= dy
-            self.ry += dx
+            sensitivity = 0.5
+            self.rx -= dy * sensitivity
+            self.ry += dx * sensitivity
 
     def on_draw(self):
         self.clear()
@@ -168,7 +203,12 @@ class ViewerWindow(pyglet.window.Window):
         glBindVertexArray(self.face_vao)
         glDrawArrays(GL_TRIANGLES, 0, self.face_vertex_count)
 
-        # Draw lines
+        # Draw the wireframe cube
+        glLineWidth(1)
+        glBindVertexArray(self.cube_vao)
+        glDrawArrays(GL_LINES, 0, self.cube_vertex_count)
+
+        # Draw intersection lines (thicker)
         glLineWidth(3)
         glBindVertexArray(self.line_vao)
         glDrawArrays(GL_LINES, 0, self.line_vertex_count)
